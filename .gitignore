@@ -1,0 +1,20 @@
+# Data — raw dataset is ~1.7 GB, downloaded not committed
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Generated figures — commit final ones deliberately with `git add -f`
+results/figures/*.png
+
+# OS / editor
+.DS_Store
+.vscode/
