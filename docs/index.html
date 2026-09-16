@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading a heartbeat through a moving wrist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ppg:#e8536a; --acc:#4b9fe1; --good:#3fb98a; --warn:#e5a13c;
+  --r:3px;
+  --f-sans:"Instrument Sans",ui-sans-serif,system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,monospace;
+}
+[data-theme=dark]{
+  --bg:#10141c; --surf:#171c27; --surf2:#1e2431; --line:#2a3242;
+  --ink:#e7ecf3; --ink2:#9aa7ba; --ink3:#6b788c; --truth:#e7ecf3;
+  --grid:rgba(255,255,255,.055);
+}
+[data-theme=light]{
+  --bg:#f2f5f8; --surf:#ffffff; --surf2:#eaeff4; --line:#d5dde6;
+  --ink:#16202e; --ink2:#5a6878; --ink3:#8996a6; --truth:#16202e;
+  --grid:rgba(0,0,0,.05);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:400 16px/1.6 var(--f-sans);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{font-weight:600; line-height:1.15; letter-spacing:-.018em; margin:0}
+h1{font-size:clamp(2rem,5.2vw,3.5rem)}
+h2{font-size:clamp(1.4rem,3vw,2rem); margin-bottom:.5rem}
+h3{font-size:1.05rem; letter-spacing:-.008em}
+p{margin:0 0 1rem; max-width:66ch}
+a{color:var(--acc)}
+.mono{font-family:var(--f-mono); font-variant-numeric:tabular-nums}
+
+/* ---------- chrome ---------- */
+header{
+  position:sticky; top:0; z-index:50; background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(12px); border-bottom:1px solid var(--line);
+}
+.bar{max-width:1140px; margin:0 auto; padding:.7rem 1.5rem; display:flex; align-items:center; gap:1rem}
+.mark{display:flex; align-items:center; gap:.55rem; font-weight:600; letter-spacing:-.01em; font-size:.94rem}
+.mark svg{display:block}
+nav{margin-left:auto; display:flex; gap:.2rem}
+nav button, .tgl{
+  font:500 .86rem var(--f-sans); color:var(--ink2); background:none;
+  border:1px solid transparent; border-radius:var(--r); padding:.42rem .78rem; cursor:pointer;
+}
+nav button[aria-selected=true]{color:var(--ink); background:var(--surf2); border-color:var(--line)}
+nav button:hover, .tgl:hover{color:var(--ink)}
+.tgl{border-color:var(--line); display:flex; align-items:center; gap:.4rem}
+main{max-width:1140px; margin:0 auto; padding:0 1.5rem 6rem}
+section{padding:3.4rem 0; border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+.lede{font-size:1.1rem; color:var(--ink2); max-width:62ch}
+.hide{display:none !important}
+
+/* ---------- hero ---------- */
+.hero{padding:3rem 0 3.4rem; border-bottom:1px solid var(--line)}
+.hero h1{max-width:22ch; margin-bottom:1rem}
+.scope{
+  margin-top:2rem; background:var(--surf); border:1px solid var(--line);
+  border-radius:var(--r); overflow:hidden;
+}
+.scope canvas{display:block; width:100%; height:210px}
+.readouts{display:flex; flex-wrap:wrap; border-top:1px solid var(--line)}
+.ro{flex:1 1 140px; padding:.85rem 1.1rem; border-right:1px solid var(--line)}
+.ro:last-child{border-right:0}
+.ro .k{font-size:.74rem; color:var(--ink3); letter-spacing:.02em}
+.ro .v{font:600 1.5rem/1.1 var(--f-mono); margin-top:.15rem; font-variant-numeric:tabular-nums}
+.ro .u{font-size:.72rem; color:var(--ink3); font-weight:400; margin-left:.2rem}
+.scope-note{padding:.6rem 1.1rem; font-size:.8rem; color:var(--ink3); border-top:1px solid var(--line); background:var(--surf2)}
+
+/* ---------- bits ---------- */
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:1.2rem}
+.grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:1rem}
+.card{background:var(--surf); border:1px solid var(--line); border-radius:var(--r); padding:1.2rem}
+.chip{
+  display:inline-flex; align-items:center; gap:.35rem; font-size:.78rem; color:var(--ink2);
+  background:var(--surf2); border:1px solid var(--line); border-radius:99px; padding:.2rem .6rem;
+}
+.dot{width:8px; height:8px; border-radius:99px; flex:none}
+dl.terms{display:grid; gap:0; margin:1.4rem 0 0}
+dl.terms>div{padding:.95rem 0; border-top:1px solid var(--line); display:grid; grid-template-columns:150px 1fr; gap:1.2rem}
+dl.terms dt{font-weight:600; font-size:.95rem}
+dl.terms dd{margin:0; color:var(--ink2); max-width:62ch}
+dl.terms dd em{color:var(--ink); font-style:normal; font-weight:500}
+table{width:100%; border-collapse:collapse; font-size:.9rem}
+th,td{text-align:right; padding:.5rem .55rem; border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{font-weight:500; color:var(--ink3); font-size:.78rem; border-bottom-color:var(--ink3)}
+td.num{font-family:var(--f-mono); font-variant-numeric:tabular-nums}
+tr.hl td{background:color-mix(in srgb,var(--acc) 9%,transparent)}
+.tw{overflow-x:auto}
+
+/* ---------- phases ---------- */
+.phase{display:grid; grid-template-columns:2.6rem 1fr; gap:1.1rem; padding:1.5rem 0; border-top:1px solid var(--line)}
+.pn{font:600 .95rem/2.6rem var(--f-mono); color:var(--ink3); text-align:center; border:1px solid var(--line); border-radius:var(--r); height:2.6rem}
+.io{display:grid; grid-template-columns:1fr 1fr; gap:.7rem; margin-top:.9rem}
+.io>div{background:var(--surf2); border:1px solid var(--line); border-radius:var(--r); padding:.7rem .85rem}
+.io .lab{font-size:.74rem; color:var(--ink3); margin-bottom:.25rem}
+.io .val{font-size:.88rem; font-family:var(--f-mono); color:var(--ink)}
+
+/* ---------- playground ---------- */
+.pg{display:grid; grid-template-columns:270px 1fr; gap:1.4rem; align-items:start}
+.panel{background:var(--surf); border:1px solid var(--line); border-radius:var(--r); padding:1.1rem}
+.ctl{margin-bottom:1.15rem}
+.ctl:last-child{margin-bottom:0}
+.ctl label{display:flex; justify-content:space-between; align-items:baseline; font-size:.85rem; margin-bottom:.4rem}
+.ctl label span.v{font-family:var(--f-mono); font-size:.85rem; color:var(--ink)}
+input[type=range]{width:100%; accent-color:var(--acc); height:1.1rem}
+.viz canvas{display:block; width:100%; border:1px solid var(--line); border-radius:var(--r); background:var(--surf)}
+.viz{display:grid; gap:.9rem}
+.vt{font-size:.8rem; color:var(--ink3); margin-bottom:.35rem; display:flex; gap:.9rem; flex-wrap:wrap; align-items:center}
+.verdict{display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; margin-top:.2rem}
+.verdict>div{background:var(--surf); border:1px solid var(--line); border-radius:var(--r); padding:.75rem .9rem}
+.verdict .k{font-size:.74rem; color:var(--ink3)}
+.verdict .v{font:600 1.35rem/1.2 var(--f-mono); margin-top:.15rem}
+.verdict .d{font-size:.76rem; margin-top:.2rem; color:var(--ink3)}
+button.act{
+  font:500 .88rem var(--f-sans); background:var(--surf2); color:var(--ink);
+  border:1px solid var(--line); border-radius:var(--r); padding:.5rem .8rem; cursor:pointer;
+}
+button.act:hover{border-color:var(--ink3)}
+.preset{display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.5rem}
+.preset button{font-size:.8rem; padding:.35rem .6rem}
+#drawWrap canvas{cursor:crosshair; touch-action:none}
+:focus-visible{outline:2px solid var(--acc); outline-offset:2px}
+@media (max-width:860px){
+  .grid2,.grid3,.pg,.io,.verdict{grid-template-columns:1fr}
+  dl.terms>div{grid-template-columns:1fr; gap:.3rem}
+  .ro{flex:1 1 50%}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="mark">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M1 12h3l2-7 3 13 2.5-8 1.8 4H19" stroke="var(--ppg)" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      Heartbeat through a moving wrist
+    </div>
+    <nav role="tablist">
+      <button role="tab" id="t-walk" aria-selected="true" aria-controls="p-walk">Walkthrough</button>
+      <button role="tab" id="t-play" aria-selected="false" aria-controls="p-play">Playground</button>
+    </nav>
+    <button class="tgl" id="theme" aria-label="Switch to light mode">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v2m0 10v2M1 8h2m10 0h2M3.3 3.3l1.4 1.4m6.6 6.6 1.4 1.4m0-9.4-1.4 1.4m-6.6 6.6-1.4 1.4"/><circle cx="8" cy="8" r="3.2"/></svg>
+      <span id="themeLabel">Light</span>
+    </button>
+  </div>
+</header>
+
+<main>
+
+<!-- =================== WALKTHROUGH =================== -->
+<div id="p-walk" role="tabpanel" aria-labelledby="t-walk">
+
+  <div class="hero">
+    <h1>A watch can read your pulse. Then you start walking.</h1>
+    <p class="lede">The sensor on the back of a fitness watch works by shining light into your skin. It works well when you hold still. The moment your arm swings, the reading falls apart — and not randomly. It fails in a specific, predictable way that turns out to be fixable.</p>
+
+    <div class="scope">
+      <canvas id="heroCv" height="210" aria-label="Animated wrist sensor trace degrading as motion increases"></canvas>
+      <div class="readouts">
+        <div class="ro"><div class="k">Actual heart rate</div><div class="v" id="hTrue" style="color:var(--truth)">72<span class="u">bpm</span></div></div>
+        <div class="ro"><div class="k">Naive reading</div><div class="v" id="hNaive" style="color:var(--ppg)">72<span class="u">bpm</span></div></div>
+        <div class="ro"><div class="k">Motion-aware reading</div><div class="v" id="hSmart" style="color:var(--good)">72<span class="u">bpm</span></div></div>
+        <div class="ro"><div class="k">Wrist movement</div><div class="v" id="hMot" style="color:var(--acc)">0<span class="u">%</span></div></div>
+      </div>
+      <div class="scope-note" id="heroNote">Sitting still. The pulse is obvious and both methods agree.</div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Why movement breaks it</h2>
+    <p>Blood absorbs green light. Every heartbeat pushes a little pulse of blood through the vessels under the sensor, so slightly less light bounces back. Measure the returning light about sixty times a second and you get a wave with one bump per beat.</p>
+    <p>Two things go wrong once the arm moves.</p>
+    <div class="grid2" style="margin:1.4rem 0">
+      <div class="card">
+        <h3>The sensor slides</h3>
+        <p style="margin:.5rem 0 0; color:var(--ink2); font-size:.94rem">A shift of one millimetre against the skin changes what the light passes through entirely — different tissue, different vessels, daylight leaking into the gap. These swings are far bigger than the heartbeat they are hiding.</p>
+      </div>
+      <div class="card">
+        <h3>Blood moves on its own</h3>
+        <p style="margin:.5rem 0 0; color:var(--ink2); font-size:.94rem">Swinging your arm pushes blood around inside it. That genuinely changes how much blood sits under the sensor, so the sensor reports it faithfully — as though it were a heartbeat.</p>
+      </div>
+    </div>
+    <p>So a walking signal is not a noisy version of a resting signal. It is a different signal with the heartbeat buried somewhere inside it.</p>
+
+    <h3 style="margin-top:2rem">The part that makes it genuinely hard</h3>
+    <p>You might hope to separate the two by speed. Heartbeats are fast, arm swings are slow — filter out the slow stuff and you are done.</p>
+    <p>That hope does not survive contact with the numbers. A brisk walk swings your arm about once a second and lands your feet about twice a second. A heart working at 90&nbsp;bpm beats one and a half times a second. <strong>The interference sits in exactly the same range as the signal.</strong></p>
+    <p>Here is a single real eight-second stretch of walking, with a true heart rate of 88&nbsp;bpm. Three different rhythms are present in the sensor data:</p>
+    <div class="tw">
+      <table style="margin-top:1rem; max-width:620px">
+        <thead><tr><th>Rhythm found in the signal</th><th>Per minute</th><th>Where it came from</th></tr></thead>
+        <tbody>
+          <tr><td>0.87 per second</td><td class="num">52</td><td style="text-align:left">Arm swinging</td></tr>
+          <tr class="hl"><td>1.50 per second</td><td class="num">90</td><td style="text-align:left">The actual heartbeat</td></tr>
+          <tr><td>1.75 per second</td><td class="num">105</td><td style="text-align:left">Feet hitting the ground</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.2rem">Pick the strongest rhythm and you get 90&nbsp;bpm, which is very nearly right. But the footstep rhythm reached 95% of the heartbeat's strength. Walk slightly faster and it wins — and the watch will confidently tell you your heart is at 105.</p>
+    <p><strong>The fix comes from the second sensor.</strong> The watch also has an accelerometer, the same chip that knows which way up your phone is. It measures the arm swinging directly. So: a rhythm that shows up in <em>both</em> the light sensor and the motion sensor came from your arm. A rhythm that shows up <em>only</em> in the light sensor came from your heart.</p>
+    <p>That one sentence is the whole idea. The rest is carefully applying it.</p>
+  </section>
+
+  <section>
+    <h2>Words that appear from here on</h2>
+    <p class="lede">Nine of them, and then the rest of the page is readable.</p>
+    <dl class="terms">
+      <div><dt>PPG</dt><dd>Photoplethysmography. The light-based pulse sensor. <em>Photo</em> = light, <em>plethysmo</em> = volume change, <em>graphy</em> = recording. A recording of blood volume changes, measured with light.</dd></div>
+      <div><dt>BVP</dt><dd>Blood volume pulse — what the wrist device calls its PPG output. Same thing, different label.</dd></div>
+      <div><dt>ECG</dt><dd>Electrocardiogram. Measures the heart's <em>electrical</em> activity through chest electrodes. Much cleaner than PPG, which is why hospitals use it — and why it works here as the correct answer to check against.</dd></div>
+      <div><dt>Accelerometer</dt><dd>Written <em>ACC</em>. Measures movement along three directions at once. Here it is the motion reference that tells us which rhythms to distrust.</dd></div>
+      <div><dt>Hertz (Hz)</dt><dd>Repetitions per second. One heartbeat per second is 1&nbsp;Hz, which is 60&nbsp;bpm. To convert: <em>bpm = Hz × 60</em>.</dd></div>
+      <div><dt>Spectrum</dt><dd>Like the bar display on a stereo showing bass, mid and treble. Feed in eight seconds of wiggly signal and it reports how much of each repetition rate is present. A tall spike at 1.5&nbsp;Hz means something in there repeats about three times every two seconds.</dd></div>
+      <div><dt>Window</dt><dd>One eight-second slice of recording. Every estimate is made from one window, and windows start two seconds apart — so they overlap heavily.</dd></div>
+      <div><dt>MAE</dt><dd>Mean absolute error. The average size of the mistake, ignoring direction. An MAE of 8&nbsp;bpm means being off by about eight beats per minute on a typical reading.</dd></div>
+      <div><dt>Motion artifact</dt><dd>The catch-all name for signal that movement put there and the body did not. The thing this whole project is about removing.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Where the data comes from</h2>
+    <p class="lede">A published research dataset called PPG-DaLiA. Fifteen people went about a day's activities wearing two devices at once — one that measures what we want to predict from, and one that measures the right answer.</p>
+
+    <div class="grid2" style="margin:1.6rem 0 1rem">
+      <div class="card">
+        <div class="chip" style="margin-bottom:.7rem"><span class="dot" style="background:var(--ppg)"></span>On the wrist</div>
+        <h3>Empatica E4</h3>
+        <p style="margin:.5rem 0 .9rem; color:var(--ink2); font-size:.92rem">A research wristband. This is the realistic part — everything it records is something a consumer watch could also record.</p>
+        <table>
+          <tbody>
+            <tr><td>Light pulse sensor</td><td class="num">64 ×/sec</td></tr>
+            <tr><td>Motion, 3 directions</td><td class="num">32 ×/sec</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="chip" style="margin-bottom:.7rem"><span class="dot" style="background:var(--truth)"></span>On the chest</div>
+        <h3>RespiBAN</h3>
+        <p style="margin:.5rem 0 .9rem; color:var(--ink2); font-size:.92rem">A chest strap with medical-grade electrodes. Used <em>only</em> to work out the true heart rate. The model never sees it.</p>
+        <table>
+          <tbody>
+            <tr><td>Electrical heart signal</td><td class="num">700 ×/sec</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p>Keeping those two apart is the rule the whole project rests on. The chest strap produces the answer key. If any of it leaked into the inputs, the results would describe a device nobody wears.</p>
+
+    <h3 style="margin-top:2.2rem">What the fifteen people were doing</h3>
+    <p>Not a lab protocol of clean repeated exercises. Roughly two and a half hours each of ordinary activity, which is the point — it is where the hard cases live.</p>
+    <div class="tw">
+      <table style="margin-top:1rem">
+        <thead><tr><th>Activity</th><th>Eight-second windows</th><th>Average heart rate</th><th>How much the wrist moves</th></tr></thead>
+        <tbody id="actRows"></tbody>
+        <tfoot><tr><th>Total</th><th class="num">64,697</th><th></th><th></th></tr></tfoot>
+      </table>
+    </div>
+    <p style="margin-top:1.2rem">Notice the imbalance. The easy, still activities — sitting, desk work, lunch, driving — are more than half the data. The hard ones are small: stair climbing is 3,185 windows, under five minutes per person.</p>
+    <p>That matters more than it looks. A method that handles sitting perfectly and fails completely on stairs still posts a respectable overall average, because stairs is 5% of the total. <strong>Which is why every result on this page is broken out per activity rather than reported as one number.</strong></p>
+
+    <h3 style="margin-top:2.2rem">How one reading gets made</h3>
+    <p>The recording is chopped into eight-second windows. Each window produces one heart rate estimate, and each window's correct answer comes from counting heartbeats in the chest signal over those same eight seconds.</p>
+    <p>Windows start two seconds apart, so <strong>neighbouring windows share six of their eight seconds.</strong> Two consecutive readings are computed from mostly the same heartbeats.</p>
+    <div class="card" style="margin:1.3rem 0">
+      <h3>Why that overlap changes how we test</h3>
+      <p style="margin:.55rem 0 0; color:var(--ink2); font-size:.94rem">The usual way to test a model is to hide a random slice of data, train on the rest, and see how it does on the hidden part. That would be cheating here: window 1000 and window 1001 are nearly the same eight seconds, so one lands in training and the other in testing, and the model scores brilliantly by having effectively already seen the answer.</p>
+      <p style="margin:.7rem 0 0; color:var(--ink2); font-size:.94rem">Instead we hide <em>an entire person</em>. Train on fourteen, test on the fifteenth, repeat fifteen times so everyone gets a turn. No shared heartbeats are possible, and it matches the real situation: a watch on a stranger. This is called <strong>leave-one-subject-out</strong>, and every number below uses it.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The pipeline, one stage at a time</h2>
+    <p class="lede">Five stages. Each one takes something in and hands something on, and the shape of the data changes at each step.</p>
+
+    <div class="phase">
+      <div class="pn">1</div>
+      <div>
+        <h3>Line up four clocks</h3>
+        <p style="margin:.5rem 0 0; color:var(--ink2)">The four data streams tick at different rates — 64, 32, 4 and 700 times a second — but cover the same 2½ hours. Before anything else, work out which slice of each stream belongs to which eight-second window.</p>
+        <div class="io">
+          <div><div class="lab">Takes in</div><div class="val">Four streams, four rates</div></div>
+          <div><div class="lab">Hands on</div><div class="val">64,697 aligned windows</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pn">2</div>
+      <div>
+        <h3>Strip out what cannot be a heartbeat</h3>
+        <p style="margin:.5rem 0 0; color:var(--ink2)">Keep only rhythms between 30 and 240 per minute. Slower than 30 is breathing and slow drift as the strap settles; faster than 240 is electronic noise. No human heart lives outside that range, so anything there is definitionally not what we want.</p>
+        <div class="io">
+          <div><div class="lab">Takes in</div><div class="val">Raw light sensor trace</div></div>
+          <div><div class="lab">Hands on</div><div class="val">Same trace, 10% of power removed</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pn">3</div>
+      <div>
+        <h3>Ask both sensors what rhythms they contain</h3>
+        <p style="margin:.5rem 0 0; color:var(--ink2)">Convert each window into a spectrum — the stereo-display view. Do it for the light sensor and for each direction of the motion sensor. Now "how much energy is at 1.5 per second" is a number rather than something you squint at.</p>
+        <div class="io">
+          <div><div class="lab">Takes in</div><div class="val">8 seconds of wiggly lines</div></div>
+          <div><div class="lab">Hands on</div><div class="val">Candidate rhythms + strengths</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pn">4</div>
+      <div>
+        <h3>Distrust the rhythms the arm also has</h3>
+        <p style="margin:.5rem 0 0; color:var(--ink2)">Any candidate sitting close to a motion rhythm — or to half or double one, since rhythms echo at multiples — gets its strength halved. Halved, not deleted: sometimes a heart genuinely beats at walking pace, and a strong enough pulse should still be allowed to win. Then nudge toward the previous reading, because a heart rate cannot leap 40 bpm in two seconds.</p>
+        <div class="io">
+          <div><div class="lab">Takes in</div><div class="val">Candidates + motion rhythms</div></div>
+          <div><div class="lab">Hands on</div><div class="val">One estimate per window</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pn">5</div>
+      <div>
+        <h3>Let a model learn when to trust which candidate</h3>
+        <p style="margin:.5rem 0 0; color:var(--ink2)">Stages 1–4 are hand-written rules, and they get you partway. The last stage describes each window with 21 measurements — top three candidate rhythms and their strengths, how much the wrist is moving in each direction, how muddled the spectrum is, the rule-based estimate — and trains a model (gradient-boosted trees) to predict the true heart rate from them. It learns the judgement calls instead of being told them.</p>
+        <div class="io">
+          <div><div class="lab">Takes in</div><div class="val">64,697 × 21 measurements</div></div>
+          <div><div class="lab">Hands on</div><div class="val">8.34 bpm average error</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What came out</h2>
+    <p class="lede">Every bar is the average error across all fifteen people, always predicting for someone the model never trained on. Shorter is better.</p>
+    <div class="card" style="margin-top:1.5rem"><div id="barsAbl"></div></div>
+    <p style="margin-top:1.3rem">The two grey bars are reference points that make the rest meaningful. <strong>Always guess the average</strong> is what you get for doing nothing at all — 17.67 bpm. <strong>Published deep network</strong> is the best result in the original research paper, from a neural network built specifically for this task — 7.65 bpm. Anything between those two is a real attempt.</p>
+
+    <h3 style="margin-top:2.4rem">The check that matters most</h3>
+    <p>There is a trap hiding in this dataset. Look back at the activity table: the activities with the most wrist movement are also the activities with the highest heart rate. Cycling and stairs average around 120 bpm; sitting averages 61.</p>
+    <p>So a model could score well by silently learning <em>"lots of arm movement means guess high"</em> — recognising the activity, never reading a pulse at all. It would look like a heart rate monitor and be a step counter.</p>
+    <p>The way to find out is to take the light sensor away entirely and see how well movement alone does.</p>
+    <div class="grid3" style="margin:1.4rem 0">
+      <div class="card"><div class="k" style="font-size:.78rem; color:var(--ink3)">Movement data only</div><div class="mono" style="font:600 1.8rem/1.2 var(--f-mono); margin:.2rem 0 .3rem">14.13</div><div style="font-size:.85rem; color:var(--ink2)">No pulse information whatsoever</div></div>
+      <div class="card"><div class="k" style="font-size:.78rem; color:var(--ink3)">Light sensor only</div><div class="mono" style="font:600 1.8rem/1.2 var(--f-mono); margin:.2rem 0 .3rem">10.57</div><div style="font-size:.85rem; color:var(--ink2)">Pulse, but no way to spot artifact</div></div>
+      <div class="card" style="border-color:var(--good)"><div class="k" style="font-size:.78rem; color:var(--ink3)">Both together</div><div class="mono" style="font:600 1.8rem/1.2 var(--f-mono); margin:.2rem 0 .3rem; color:var(--good)">8.34</div><div style="font-size:.85rem; color:var(--ink2)">The full method</div></div>
+    </div>
+    <p>Movement alone gets to 14.13 — better than guessing, because activity really does say something about heart rate. But the full method is 5.8 bpm better than that, and that gap can only come from actually reading the pulse. <strong>The model is measuring a heartbeat, not counting steps.</strong></p>
+
+    <h3 style="margin-top:2.4rem">Broken out by activity</h3>
+    <p>This is the view the project exists to produce. Red is the hand-written rules, green is the learned model.</p>
+    <div class="card" style="margin-top:1.2rem"><div id="barsAct"></div></div>
+    <p style="margin-top:1.3rem">The pattern is the argument. On still activities both do fine. As movement increases the rules fall apart — error above 23 bpm on walking, cycling and stairs — while the model roughly halves it.</p>
+    <p>Two honest details visible in that chart. <strong>On sitting the model is worse than the simple rules</strong> (4.09 against 2.96): when the pulse is already obvious, a plain "pick the strongest rhythm" is close to unbeatable, and a learned model trained mostly on hard cases adds wobble it does not need. And <strong>stairs remains bad</strong> at 17.88 — the heart rate climbs fast while the arm motion is at its most chaotic, so neither approach really solves it.</p>
+    <p>Also worth noticing: cycling has a higher heart rate than walking but a lower error. Hands gripping handlebars move far less than a swinging arm. <em>The interference tracks how much the wrist moves, not how hard you are working.</em></p>
+
+    <h3 style="margin-top:2.4rem">The result nobody puts on a poster</h3>
+    <p>Same method, same settings, fifteen people. The error ranges from 3.87 bpm to 21.51 bpm — a 5.6× spread.</p>
+    <div class="card" style="margin-top:1.2rem"><div id="barsSubj"></div></div>
+    <p style="margin-top:1.3rem">One person (S5) is five times harder to read than another (S7), and nothing in the recorded information about them explains why. Sensor fit, wrist size, skin properties and how tightly the band was worn all plausibly matter and none were measured.</p>
+    <p>This is the actual frontier in wearable sensing. The average is a solved-ish problem; the spread is not. A watch that works beautifully for most people and poorly for some is a product problem that no amount of model tuning fixes.</p>
+  </section>
+
+  <section>
+    <h2>Two things that did not work</h2>
+    <p class="lede">Kept in because a page that only lists successes is not telling you much.</p>
+
+    <div class="card" style="margin-top:1.4rem">
+      <h3>A hand-designed feature the model ignored</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">The central insight is that candidate rhythms close to a motion rhythm are suspect. As a diagnostic that held up strongly: 85% of the rule-based failures on walking sat on a motion rhythm or an echo of one, against 11% of its successes.</p>
+      <p style="margin:.8rem 0 0; color:var(--ink2)">So it seemed obvious to hand the model a measurement of exactly that — how far each candidate sits from the nearest motion rhythm. It ranked 15th out of 21 in usefulness. The model preferred the raw ingredients: the candidate rhythms themselves plus plain "how hard is the wrist moving", and worked out the relationship on its own.</p>
+      <p style="margin:.8rem 0 0; color:var(--ink2)">The lesson generalises. Hand-computed combinations of things the model already has usually just add a redundant column. Feature engineering earns its place when it adds information the model could not have derived.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>A fix for the sitting problem that got rejected</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">Since the simple rules beat the model when sitting, an obvious repair is to switch between them: use the rules when the wrist is still, the model when it moves. The switch point has to be chosen without looking at the test person, so it was picked using a held-out slice of the training people.</p>
+      <p style="margin:.8rem 0 0; color:var(--ink2)">All fifteen rounds chose "never switch". Sitting is 4,517 windows — but desk work, lunch and driving are another 28,736 windows that are also low-movement, and there the model wins by 1.5 to 3.5 bpm. Any switch point low enough to catch sitting also catches those, and the trade is badly negative.</p>
+      <p style="margin:.8rem 0 0; color:var(--ink2)">The diagnosis: sitting is not distinctive because the wrist is still. It is distinctive because the pulse is <em>unmistakable</em>. Movement was the wrong thing to measure.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What building this taught me</h2>
+    <p class="lede">I came into this comfortable with Python and gradient boosting and knowing nothing about signal processing. The signal processing turned out to be the easy half.</p>
+
+    <div class="card" style="margin-top:1.5rem">
+      <h3>Designing the test was harder than building the model</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">The model itself is a few dozen lines. Working out how to measure it honestly took most of the effort — noticing that overlapping windows make a random train/test split meaningless, and that the only defensible option is hiding an entire person.</p>
+      <p style="margin:.75rem 0 0; color:var(--ink2)">That paid for itself immediately. I tuned the rule-based method on one person and got 9.10 bpm, which felt great. Across all fifteen the same settings gave 14.02 — the first number was optimistic by more than half. <strong>The protocol caught me overfitting before it reached the model, which is exactly what it is for.</strong></p>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>A result needs a floor and a ceiling to mean anything</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">"8.34 bpm" on its own is unreadable. It only becomes a result next to 17.67 (do nothing at all) and 7.65 (the best published attempt). I now build that comparison before running the model rather than after, because it also works as a tripwire: failing to beat the do-nothing floor means something is broken, not merely mediocre.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>The ablation is what makes a number trustworthy</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">Movement and heart rate are tangled together in this data — people move more when their heart is working harder. So a model could score respectably by recognising the activity and never reading a pulse. Taking the light sensor away and finding that movement alone only reaches 14.13 is the single most important number on this page, and it is not the headline one.</p>
+      <p style="margin:.75rem 0 0; color:var(--ink2)">Anyone can report an accuracy figure. Showing that it means what it appears to mean is a different piece of work.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>Change one thing at a time, or learn nothing</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">I added two improvements to the rule-based method at once. The overall error moved by 0.02 bpm — apparently nothing happened. Broken out by activity, cycling had improved 60% and walking had degraded 77%; the two effects had cancelled. I could not tell which change caused which, and had to run both separately to find out.</p>
+      <p style="margin:.75rem 0 0; color:var(--ink2)">Plotting it showed why: one of the changes could trap the estimate on a wrong value and hold it there for three minutes. A prior strong enough to help is strong enough to trap.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>A good diagnostic is not automatically a good fix</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">Checking whether failures sat on a motion rhythm separated cleanly — 85% of failures against 11% of successes. That looked like a solved problem. But I had measured it only on the windows that were already failing. Applied to all 64,697 windows, the correction taxed the easy majority to help the hard minority, and the overall error got slightly worse.</p>
+      <p style="margin:.75rem 0 0; color:var(--ink2)">Something that discriminates well on the cases you studied can still be a bad intervention on the whole population. Worth checking rather than assuming.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3>Averages hide the thing you are trying to fix</h3>
+      <p style="margin:.6rem 0 0; color:var(--ink2)">Stair climbing is 5% of this dataset. A method could fail completely on stairs and still post a decent overall average — which means the overall average is the wrong way to watch the problem this project is about. Breaking results out by activity and by person is where both the interesting result (error halves under movement) and the uncomfortable one (a 5.6× spread between people) actually live.</p>
+    </div>
+
+    <h3 style="margin-top:2.4rem">Why these particular lessons</h3>
+    <p>I want to work on health and fitness sensing, and the recurring problem in that field is not model architecture. It is that a device has to work on a stranger's wrist, in conditions nobody controlled, and that the gap between a demo and a product is mostly about honest measurement — knowing when your signal is unusable, knowing which population your numbers apply to, and being able to say what your method does <em>not</em> do.</p>
+    <p>The two failed experiments on this page took about as long as the successful ones, and I think they say more about whether I would be useful on a team. Both of them are cases where the obvious idea was wrong and the way to find out was to test it properly rather than reason about it harder.</p>
+  </section>
+
+  <section style="border-bottom:0">
+    <h2>Try breaking it yourself</h2>
+    <p class="lede">The playground tab has the sliders. Set a heart rate, set a walking speed, and turn the movement up until the footstep rhythm overtakes the heartbeat. You will see the naive method jump to the wrong answer and the motion-aware one stay put.</p>
+    <p style="margin-top:1.2rem"><button class="act" id="goPlay">Open the playground</button></p>
+  </section>
+</div>
+
+<!-- =================== PLAYGROUND =================== -->
+<div id="p-play" role="tabpanel" aria-labelledby="t-play" class="hide">
+  <section style="border-bottom:0; padding-top:2.4rem">
+    <h2>Make the sensor fail</h2>
+    <p class="lede">These signals are simulated, not recorded, so the maths is visible: a heartbeat rhythm, an arm-swing rhythm with its footstep echo, and some noise. The two estimators are the real ones from the project.</p>
+
+    <div class="pg" style="margin-top:1.8rem">
+      <div class="panel">
+        <div class="ctl">
+          <label for="sHR">Heart rate <span class="v" id="vHR">88 bpm</span></label>
+          <input type="range" id="sHR" min="45" max="180" value="88" step="1">
+        </div>
+        <div class="ctl">
+          <label for="sCad">Walking pace <span class="v" id="vCad">105 steps/min</span></label>
+          <input type="range" id="sCad" min="0" max="190" value="105" step="1">
+        </div>
+        <div class="ctl">
+          <label for="sMot">How much the wrist moves <span class="v" id="vMot">60%</span></label>
+          <input type="range" id="sMot" min="0" max="100" value="60" step="1">
+        </div>
+        <div class="ctl">
+          <label for="sNoise">Sensor noise <span class="v" id="vNoise">15%</span></label>
+          <input type="range" id="sNoise" min="0" max="100" value="15" step="1">
+        </div>
+        <div class="ctl">
+          <label style="display:block; margin-bottom:.45rem">Jump to a situation</label>
+          <div class="preset">
+            <button class="act" data-p="60,0,2,10">Sitting</button>
+            <button class="act" data-p="88,105,60,15">Walking</button>
+            <button class="act" data-p="124,0,35,20">Cycling</button>
+            <button class="act" data-p="150,150,85,25">Stairs</button>
+            <button class="act" data-p="105,105,80,15">The collision</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="viz">
+        <div>
+          <div class="vt">
+            <span><span class="dot" style="background:var(--ppg); display:inline-block"></span> Light sensor, 8 seconds</span>
+          </div>
+          <canvas id="cvPPG" height="130"></canvas>
+        </div>
+        <div>
+          <div class="vt">
+            <span><span class="dot" style="background:var(--acc); display:inline-block"></span> Motion sensor, same 8 seconds</span>
+          </div>
+          <canvas id="cvACC" height="90"></canvas>
+        </div>
+        <div>
+          <div class="vt">
+            <span>Rhythms present</span>
+            <span style="color:var(--ppg)">— light sensor</span>
+            <span style="color:var(--acc)">— motion sensor</span>
+            <span style="color:var(--truth)">┆ true heart rate</span>
+          </div>
+          <canvas id="cvSpec" height="180"></canvas>
+        </div>
+        <div class="verdict">
+          <div><div class="k">Actual</div><div class="v" id="pTrue" style="color:var(--truth)">88</div><div class="d">what we are trying to find</div></div>
+          <div><div class="k">Pick the strongest rhythm</div><div class="v" id="pNaive" style="color:var(--ppg)">—</div><div class="d" id="pNaiveD">—</div></div>
+          <div><div class="k">Discount motion rhythms</div><div class="v" id="pSmart" style="color:var(--good)">—</div><div class="d" id="pSmartD">—</div></div>
+        </div>
+        <div class="panel" id="pgNote" style="font-size:.92rem; color:var(--ink2)"></div>
+      </div>
+    </div>
+
+    <h2 style="margin-top:3.4rem">Or draw your own</h2>
+    <p class="lede">Drag across the box to draw any repeating wave you like, then see what rhythms the spectrum finds in it. Draw evenly spaced bumps and it will find their rate — the same operation stage 3 performs on real sensor data.</p>
+    <div class="pg" style="margin-top:1.4rem">
+      <div class="panel">
+        <p style="font-size:.9rem; color:var(--ink2); margin:0 0 .9rem">Try eight evenly spaced bumps across the eight seconds. That is one per second, so the spectrum should report 60 bpm.</p>
+        <button class="act" id="clearDraw">Clear and start again</button>
+        <div style="margin-top:1rem; font-size:.85rem; color:var(--ink3)">Strongest rhythm found</div>
+        <div class="mono" id="drawOut" style="font:600 1.6rem/1.2 var(--f-mono); margin-top:.2rem">—</div>
+      </div>
+      <div class="viz" id="drawWrap">
+        <canvas id="cvDraw" height="150"></canvas>
+        <canvas id="cvDrawSpec" height="130"></canvas>
+      </div>
+    </div>
+  </section>
+</div>
+
+</main>
+
+<script>
+/* ============ theme ============ */
+const root=document.documentElement, tgl=document.getElementById('theme'), tl=document.getElementById('themeLabel');
+tgl.onclick=()=>{
+  const d=root.dataset.theme==='dark';
+  root.dataset.theme=d?'light':'dark';
+  tl.textContent=d?'Dark':'Light';
+  tgl.setAttribute('aria-label',d?'Switch to dark mode':'Switch to light mode');
+  drawAll(); renderCharts();
+};
+const C=n=>getComputedStyle(root).getPropertyValue(n).trim();
+
+/* ============ tabs ============ */
+const tabs=[['t-walk','p-walk'],['t-play','p-play']];
+function show(id){
+  tabs.forEach(([t,p])=>{
+    const on=t===id;
+    document.getElementById(t).setAttribute('aria-selected',on);
+    document.getElementById(p).classList.toggle('hide',!on);
+  });
+  window.scrollTo({top:0,behavior:'instant'});
+  if(id==='t-play'){sizeAll(); drawAll();}
+}
+tabs.forEach(([t])=>document.getElementById(t).onclick=()=>show(t));
+document.getElementById('goPlay').onclick=()=>show('t-play');
+
+/* ============ real results ============ */
+const ABL=[
+  {k:'Always guess the average',v:17.67,c:'ink3'},
+  {k:'Hand-written rules',v:14.02,c:'ppg'},
+  {k:'Movement data only',v:14.13,c:'warn'},
+  {k:'Light sensor only',v:10.57,c:'warn'},
+  {k:'Learned model, both sensors',v:8.34,c:'good'},
+  {k:'Published deep network',v:7.65,c:'ink3'}
+];
+const ACT=[
+  {a:'Sitting',n:4517,hr:61,b:2.96,f:4.09,m:'very little'},
+  {a:'Desk work',n:8450,hr:76,b:5.99,f:4.46,m:'a little'},
+  {a:'Lunch',n:13498,hr:84,b:9.36,f:5.85,m:'a little'},
+  {a:'Driving',n:6788,hr:85,b:8.81,f:6.36,m:'a little'},
+  {a:'Moving between activities',n:17103,hr:95,b:17.42,f:9.75,m:'a lot, unpredictably'},
+  {a:'Walking',n:4643,hr:99,b:23.53,f:11.55,m:'a lot, rhythmically'},
+  {a:'Cycling',n:3424,hr:123,b:23.49,f:12.86,m:'some — hands braced'},
+  {a:'Table football',n:2258,hr:90,b:24.38,f:13.82,m:'a lot, erratically'},
+  {a:'Climbing stairs',n:3185,hr:119,b:31.81,f:17.88,m:'a lot, violently'}
+];
+const SUBJ=[['S7',5.45,3.87],['S14',9.82,4.40],['S13',8.57,4.87],['S3',11.34,4.91],['S15',11.58,5.48],
+['S10',10.66,5.52],['S2',10.29,5.90],['S4',17.66,7.29],['S1',9.09,8.20],['S6',14.34,8.34],
+['S9',20.89,8.88],['S11',23.46,10.78],['S8',13.71,11.75],['S12',11.34,14.04],['S5',31.96,21.51]];
+
+document.getElementById('actRows').innerHTML=ACT.map(r=>
+  `<tr><td>${r.a}</td><td class="num">${r.n.toLocaleString()}</td><td class="num">${r.hr}</td><td style="text-align:left;color:var(--ink2)">${r.m}</td></tr>`).join('');
+
+/* ============ charts (SVG) ============ */
+function hbar(el,rows,max,opts={}){
+  const W=760,rh=opts.rh||34,pad=opts.labelW||186,H=rows.length*rh+26;
+  const bw=W-pad-64;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block" role="img" aria-label="${opts.alt||''}">`;
+  if(opts.ref) {
+    const x=pad+opts.ref/max*bw;
+    s+=`<line x1="${x}" y1="6" x2="${x}" y2="${rows.length*rh+4}" stroke="${C('--ink3')}" stroke-dasharray="3 3" stroke-width="1"/>`;
+  }
+  rows.forEach((r,i)=>{
+    const y=i*rh+6, h=rh-13, w=Math.max(2,r.v/max*bw);
+    s+=`<text x="${pad-10}" y="${y+h/2}" text-anchor="end" dominant-baseline="central" fill="${C('--ink')}" font-size="13" font-family="${C('--f-sans')}">${r.k}</text>`;
+    s+=`<rect x="${pad}" y="${y}" width="${w}" height="${h}" rx="2" fill="${C('--'+r.c)}"/>`;
+    s+=`<text x="${pad+w+8}" y="${y+h/2}" dominant-baseline="central" fill="${C('--ink2')}" font-size="12.5" font-family="${C('--f-mono')}">${r.v.toFixed(2)}</text>`;
+  });
+  s+=`<line x1="${pad}" y1="${rows.length*rh+6}" x2="${pad+bw}" y2="${rows.length*rh+6}" stroke="${C('--line')}"/>`;
+  s+=`<text x="${pad+bw}" y="${rows.length*rh+20}" text-anchor="end" fill="${C('--ink3')}" font-size="11" font-family="${C('--f-sans')}">average error, bpm</text>`;
+  s+='</svg>';
+  el.innerHTML=s;
+}
+function gbar(el,rows,max,alt){
+  const W=760,rh=40,pad=186,H=rows.length*rh+30,bw=W-pad-74;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block" role="img" aria-label="${alt}">`;
+  rows.forEach((r,i)=>{
+    const y=i*rh+6;
+    [['b','ppg'],['f','good']].forEach(([key,col],j)=>{
+      const w=Math.max(2,r[key]/max*bw);
+      s+=`<rect x="${pad}" y="${y+j*13}" width="${w}" height="11" rx="2" fill="${C('--'+col)}"/>`;
+      s+=`<text x="${pad+w+7}" y="${y+j*13+5.5}" dominant-baseline="central" fill="${C('--ink3')}" font-size="11" font-family="${C('--f-mono')}">${r[key].toFixed(2)}</text>`;
+    });
+    s+=`<text x="${pad-10}" y="${y+12}" text-anchor="end" dominant-baseline="central" fill="${C('--ink')}" font-size="13" font-family="${C('--f-sans')}">${r.label}</text>`;
+  });
+  s+=`<line x1="${pad}" y1="${rows.length*rh+8}" x2="${pad+bw}" y2="${rows.length*rh+8}" stroke="${C('--line')}"/>`;
+  s+=`<text x="${pad+bw}" y="${rows.length*rh+22}" text-anchor="end" fill="${C('--ink3')}" font-size="11" font-family="${C('--f-sans')}">average error, bpm</text>`;
+  s+='</svg>';
+  el.innerHTML=s;
+}
+function renderCharts(){
+  hbar(document.getElementById('barsAbl'),ABL,18,{ref:11.06,alt:'Average error for each method'});
+  gbar(document.getElementById('barsAct'),ACT.map(r=>({label:r.a,b:r.b,f:r.f})),33,'Average error by activity');
+  gbar(document.getElementById('barsSubj'),SUBJ.map(r=>({label:r[0],b:r[1],f:r[2]})),33,'Average error by person');
+}
+renderCharts();
+
+/* ============ FFT (iterative radix-2) ============ */
+function fftMag(re){
+  const n=re.length, im=new Float64Array(n), out=new Float64Array(n/2);
+  for(let i=1,j=0;i<n;i++){
+    let b=n>>1;
+    for(;j&b;b>>=1) j^=b;
+    j^=b;
+    if(i<j){const t=re[i];re[i]=re[j];re[j]=t;}
+  }
+  for(let len=2;len<=n;len<<=1){
+    const ang=-2*Math.PI/len, wr=Math.cos(ang), wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let cr=1,ci=0;
+      for(let k=0;k<len/2;k++){
+        const ur=re[i+k],ui=im[i+k];
+        const vr=re[i+k+len/2]*cr-im[i+k+len/2]*ci;
+        const vi=re[i+k+len/2]*ci+im[i+k+len/2]*cr;
+        re[i+k]=ur+vr; im[i+k]=ui+vi;
+        re[i+k+len/2]=ur-vr; im[i+k+len/2]=ui-vi;
+        const nr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=nr;
+      }
+    }
+  }
+  for(let i=0;i<n/2;i++) out[i]=Math.hypot(re[i],im[i]);
+  return out;
+}
+const NFFT=2048, FS=64, NSAMP=512;
+function spectrumOf(sig,fs){
+  const buf=new Float64Array(NFFT);
+  const mean=sig.reduce((a,b)=>a+b,0)/sig.length;
+  for(let i=0;i<sig.length;i++){
+    const w=0.5-0.5*Math.cos(2*Math.PI*i/(sig.length-1)); // Hann
+    buf[i]=(sig[i]-mean)*w;
+  }
+  const mag=fftMag(buf);
+  return {mag,df:fs/NFFT};
+}
+function peaksIn(mag,df,lo,hi,n=3){
+  const a=Math.ceil(lo/df), b=Math.floor(hi/df), out=[];
+  for(let i=a+1;i<b-1;i++) if(mag[i]>mag[i-1]&&mag[i]>=mag[i+1]) out.push({f:i*df,p:mag[i]});
+  out.sort((x,y)=>y.p-x.p);
+  return out.slice(0,n);
+}
+
+/* ============ signal synthesis ============ */
+function synth(hr,cad,mot,noi){
+  const fh=hr/60, fs=cad/120;            // arm swings once per two steps
+  const ppg=new Float64Array(NSAMP), acc=new Float64Array(256);
+  let seed=12345;
+  const rnd=()=>{seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff-0.5;};
+  for(let i=0;i<NSAMP;i++){
+    const t=i/FS;
+    let v=0;
+    for(let k=1;k<=4;k++) v+=Math.sin(2*Math.PI*k*fh*t-k*0.5)/Math.pow(k,1.45);
+    let m=0;
+    if(cad>0) m=Math.sin(2*Math.PI*fs*t)+0.9*Math.sin(2*Math.PI*2*fs*t+0.6)+0.25*Math.sin(2*Math.PI*3*fs*t);
+    ppg[i]=v+mot*3.1*m+noi*1.1*rnd();
+  }
+  for(let i=0;i<256;i++){
+    const t=i/32;
+    let m=0;
+    if(cad>0) m=Math.sin(2*Math.PI*fs*t)+0.85*Math.sin(2*Math.PI*2*fs*t+0.6)+0.22*Math.sin(2*Math.PI*3*fs*t);
+    acc[i]=mot*m+0.03*rnd();
+  }
+  return {ppg,acc,fh};
+}
+function estimate(ppg,acc){
+  const sp=spectrumOf(ppg,64), sa=spectrumOf(acc,32);
+  const cand=peaksIn(sp.mag,sp.df,0.5,3.5,6);
+  const naive=cand.length?cand[0].f*60:NaN;
+  const ap=peaksIn(sa.mag,sa.df,0.25,3.5,3).map(p=>p.f*60);
+  const bad=[...ap,...ap.map(v=>v/2),...ap.map(v=>v*2)];
+  let best=null;
+  cand.forEach(c=>{
+    const bpm=c.f*60;
+    const near=bad.some(b=>Math.abs(b-bpm)<6);
+    const score=c.p*(near?0.5:1);
+    if(!best||score>best.score) best={score,bpm};
+  });
+  return {naive,smart:best?best.bpm:NaN,sp,sa,motionPeaks:ap};
+}
+
+/* ============ canvas helpers ============ */
+function fit(cv){
+  const r=window.devicePixelRatio||1, w=cv.clientWidth;
+  cv.width=w*r; cv.height=cv.getAttribute('height')*r;
+  const x=cv.getContext('2d'); x.setTransform(r,0,0,r,0,0);
+  return {x,w,h:+cv.getAttribute('height')};
+}
+function grid(x,w,h,cols){
+  x.strokeStyle=C('--grid'); x.lineWidth=1;
+  for(let i=1;i<cols;i++){const gx=Math.round(i*w/cols)+.5; x.beginPath(); x.moveTo(gx,0); x.lineTo(gx,h); x.stroke();}
+  const gy=Math.round(h/2)+.5; x.beginPath(); x.moveTo(0,gy); x.lineTo(w,gy); x.stroke();
+}
+function trace(x,sig,w,h,col,padY=10){
+  let mn=Infinity,mx=-Infinity;
+  for(const v of sig){if(v<mn)mn=v; if(v>mx)mx=v;}
+  const rng=(mx-mn)||1;
+  x.strokeStyle=col; x.lineWidth=1.5; x.lineJoin='round'; x.beginPath();
+  sig.forEach((v,i)=>{
+    const px=i/(sig.length-1)*w, py=padY+(1-(v-mn)/rng)*(h-2*padY);
+    i?x.lineTo(px,py):x.moveTo(px,py);
+  });
+  x.stroke();
+}
+
+/* ============ hero ============ */
+const heroCv=document.getElementById('heroCv');
+let heroT=0, heroBuf=[], heroLast={n:72,s:72,m:0};
+const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function heroFrame(){
+  const {x,w,h}=fit(heroCv);
+  const cyc=(heroT%1400)/1400;
+  const mot=Math.max(0,Math.min(1,(Math.sin((cyc-0.25)*2*Math.PI)+0.35)/1.2));
+  const hr=72+mot*34, cad=mot>0.06?96+mot*36:0;
+  const {ppg,acc}=synth(hr,cad,mot*0.95,0.14);
+  const e=estimate(ppg,acc);
+  x.clearRect(0,0,w,h); grid(x,w,h,8);
+  trace(x,Array.from(ppg),w,h,C('--ppg'),14);
+  x.globalAlpha=.5; trace(x,Array.from(acc),w,h*0.42,C('--acc'),6); x.globalAlpha=1;
+  heroLast={n:e.naive,s:e.smart,m:mot,hr};
+  document.getElementById('hTrue').innerHTML=Math.round(hr)+'<span class="u">bpm</span>';
+  document.getElementById('hNaive').innerHTML=(isNaN(e.naive)?'—':Math.round(e.naive))+'<span class="u">bpm</span>';
+  document.getElementById('hSmart').innerHTML=(isNaN(e.smart)?'—':Math.round(e.smart))+'<span class="u">bpm</span>';
+  document.getElementById('hMot').innerHTML=Math.round(mot*100)+'<span class="u">%</span>';
+  const note=document.getElementById('heroNote');
+  const errN=Math.abs(e.naive-hr), errS=Math.abs(e.smart-hr);
+  if(mot<0.12) note.textContent='Sitting still. The pulse is obvious and both methods agree.';
+  else if(errN>12&&errS<10) note.textContent='Walking. The naive reading has locked onto the footstep rhythm; using the motion sensor avoids it.';
+  else if(errN>12) note.textContent='Heavy movement. Both methods are struggling — this is the hard case stairs represents.';
+  else note.textContent='Moving. The pulse is still the strongest rhythm present, so both methods hold.';
+  heroT+=reduce?1400:9;
+  if(!reduce) requestAnimationFrame(heroFrame);
+}
+requestAnimationFrame(heroFrame);
+
+/* ============ playground ============ */
+const S={hr:document.getElementById('sHR'),cad:document.getElementById('sCad'),mot:document.getElementById('sMot'),noi:document.getElementById('sNoise')};
+function drawPlayground(){
+  const hr=+S.hr.value, cad=+S.cad.value, mot=+S.mot.value/100, noi=+S.noi.value/100;
+  document.getElementById('vHR').textContent=hr+' bpm';
+  document.getElementById('vCad').textContent=cad===0?'standing still':cad+' steps/min';
+  document.getElementById('vMot').textContent=Math.round(mot*100)+'%';
+  document.getElementById('vNoise').textContent=Math.round(noi*100)+'%';
+
+  const {ppg,acc}=synth(hr,cad,mot,noi);
+  const e=estimate(ppg,acc);
+
+  let g=fit(document.getElementById('cvPPG'));
+  g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(ppg),g.w,g.h,C('--ppg'));
+  g=fit(document.getElementById('cvACC'));
+  g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(acc),g.w,g.h,C('--acc'));
+
+  // spectrum
+  g=fit(document.getElementById('cvSpec'));
+  const {x,w,h}=g; x.clearRect(0,0,w,h);
+  const LO=30,HI=210, xs=b=>(b-LO)/(HI-LO)*w;
+  x.strokeStyle=C('--grid');
+  for(let b=60;b<HI;b+=30){const px=Math.round(xs(b))+.5; x.beginPath(); x.moveTo(px,0); x.lineTo(px,h-18); x.stroke();
+    x.fillStyle=C('--ink3'); x.font='10px '+C('--f-mono'); x.textAlign='center'; x.fillText(b,px,h-5);}
+  const band=(sp,fsr,col,fill)=>{
+    let mx=0; const pts=[];
+    for(let b=LO;b<=HI;b+=1){const i=Math.round(b/60/sp.df); const v=sp.mag[i]||0; pts.push([b,v]); if(v>mx)mx=v;}
+    x.beginPath();
+    pts.forEach(([b,v],i)=>{const px=xs(b),py=(h-20)-(v/(mx||1))*(h-32); i?x.lineTo(px,py):x.moveTo(px,py);});
+    x.strokeStyle=col; x.lineWidth=1.6; x.stroke();
+    if(fill){x.lineTo(xs(HI),h-20); x.lineTo(xs(LO),h-20); x.closePath(); x.fillStyle=col+'22'; x.fill();}
+  };
+  if(mot>0.01) band(e.sa,32,C('--acc'),true);
+  band(e.sp,64,C('--ppg'),false);
+  const tx=Math.round(xs(hr))+.5;
+  x.setLineDash([4,3]); x.strokeStyle=C('--truth'); x.lineWidth=1.2;
+  x.beginPath(); x.moveTo(tx,0); x.lineTo(tx,h-20); x.stroke(); x.setLineDash([]);
+
+  // verdict
+  const set=(id,idD,val)=>{
+    const err=Math.abs(val-hr);
+    document.getElementById(id).textContent=isNaN(val)?'—':Math.round(val);
+    const d=document.getElementById(idD);
+    d.textContent=isNaN(val)?'—':(err<5?'within '+err.toFixed(0)+' bpm':'off by '+err.toFixed(0)+' bpm');
+    d.style.color=err<5?C('--good'):err<15?C('--warn'):C('--ppg');
+  };
+  document.getElementById('pTrue').textContent=hr;
+  set('pNaive','pNaiveD',e.naive);
+  set('pSmart','pSmartD',e.smart);
+
+  const eN=Math.abs(e.naive-hr), eS=Math.abs(e.smart-hr);
+  const note=document.getElementById('pgNote');
+  if(mot<0.05) note.textContent='The wrist is still, so there is nothing to confuse the sensor. Both methods find the pulse easily — this is the situation where the simple approach is genuinely hard to beat.';
+  else if(eN>12&&eS<8) note.innerHTML='<strong>This is the failure the project fixes.</strong> The footstep rhythm is now stronger than the heartbeat, so picking the strongest rhythm gives the wrong answer. The motion sensor shows that rhythm too, so discounting it recovers the pulse.';
+  else if(eN>12&&eS>12) note.innerHTML='<strong>Both methods have failed.</strong> The movement is strong enough to bury the pulse entirely — the heartbeat is no longer clearly present in the data, so no amount of cleverness recovers it. This is roughly what stair climbing looks like.';
+  else if(Math.abs(hr-cad)<12&&cad>0) note.innerHTML='<strong>A genuine coincidence.</strong> The heart rate and the step rate are nearly identical, so the two rhythms overlap and cannot be separated. This is why motion rhythms are discounted rather than deleted — sometimes they really are where the pulse is.';
+  else note.textContent='The pulse is still the strongest rhythm in the data, so both methods agree. Turn the movement up, or set the walking pace near double the heart rate, to break it.';
+}
+Object.values(S).forEach(s=>s.addEventListener('input',drawPlayground));
+document.querySelectorAll('.preset button').forEach(b=>b.onclick=()=>{
+  const [hr,cad,mot,noi]=b.dataset.p.split(',');
+  S.hr.value=hr; S.cad.value=cad; S.mot.value=mot; S.noi.value=noi; drawPlayground();
+});
+
+/* ============ draw your own ============ */
+const dCv=document.getElementById('cvDraw'), dSp=document.getElementById('cvDrawSpec');
+let drawn=new Array(NSAMP).fill(0), drawing=false, anyDrawn=false;
+function renderDraw(){
+  let g=fit(dCv); g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8);
+  if(!anyDrawn){
+    g.x.fillStyle=C('--ink3'); g.x.font='13px '+C('--f-sans'); g.x.textAlign='center';
+    g.x.fillText('Drag across here to draw a wave',g.w/2,g.h/2-6);
+  } else trace(g.x,drawn,g.w,g.h,C('--ppg'));
+  g=fit(dSp); g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,6);
+  if(anyDrawn){
+    const sp=spectrumOf(drawn,64), pk=peaksIn(sp.mag,sp.df,0.4,4,1);
+    const LO=20,HI=250, xs=b=>(b-LO)/(HI-LO)*g.w;
+    let mx=0; const pts=[];
+    for(let b=LO;b<=HI;b+=1){const v=sp.mag[Math.round(b/60/sp.df)]||0; pts.push([b,v]); if(v>mx)mx=v;}
+    g.x.beginPath();
+    pts.forEach(([b,v],i)=>{const px=xs(b),py=(g.h-18)-(v/(mx||1))*(g.h-30); i?g.x.lineTo(px,py):g.x.moveTo(px,py);});
+    g.x.strokeStyle=C('--ppg'); g.x.lineWidth=1.6; g.x.stroke();
+    g.x.fillStyle=C('--ink3'); g.x.font='10px '+C('--f-mono'); g.x.textAlign='center';
+    for(let b=60;b<HI;b+=60) g.x.fillText(b,xs(b),g.h-4);
+    document.getElementById('drawOut').textContent=pk.length?Math.round(pk[0].f*60)+' bpm':'—';
+  } else document.getElementById('drawOut').textContent='—';
+}
+function pos(ev){
+  const r=dCv.getBoundingClientRect();
+  const cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;
+  const cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top;
+  return [Math.max(0,Math.min(1,cx/r.width)), Math.max(-1,Math.min(1,1-2*cy/r.height))];
+}
+function put(ev){
+  const [fx,fy]=pos(ev); const i=Math.round(fx*(NSAMP-1));
+  for(let k=Math.max(0,i-3);k<=Math.min(NSAMP-1,i+3);k++) drawn[k]=fy;
+  anyDrawn=true; renderDraw();
+}
+['mousedown','touchstart'].forEach(e=>dCv.addEventListener(e,ev=>{ev.preventDefault();drawing=true;put(ev);}));
+['mousemove','touchmove'].forEach(e=>dCv.addEventListener(e,ev=>{if(drawing){ev.preventDefault();put(ev);}}));
+['mouseup','mouseleave','touchend'].forEach(e=>dCv.addEventListener(e,()=>drawing=false));
+document.getElementById('clearDraw').onclick=()=>{drawn=new Array(NSAMP).fill(0); anyDrawn=false; renderDraw();};
+
+/* ============ boot ============ */
+function sizeAll(){}
+function drawAll(){ drawPlayground(); renderDraw(); }
+drawAll();
+let rt; window.addEventListener('resize',()=>{clearTimeout(rt); rt=setTimeout(()=>{drawAll(); renderCharts();},120);});
+</script>
+</body>
+</html>
