@@ -1,5 +1,8 @@
 # Heart-rate estimation from wrist PPG under motion artifact
 
+**[Interactive walkthrough →](https://shashankj52.github.io/ppg-hr-estimation/)** · plain-English explainer with a live demo
+
+
 Estimating heart rate from a wrist-worn optical sensor is easy when you sit still and hard when you move. This project quantifies how hard, builds two models, and tries to establish that the better one works for the right reason.
 
 **Result: 8.34 bpm MAE across 64,697 windows from 15 subjects under leave-one-subject-out cross-validation** — a 25% improvement on the best classical method reported for this dataset (11.06 bpm) and within 0.7 bpm of a purpose-built CNN (7.65 bpm).
