@@ -187,6 +187,27 @@ The baseline's four parameters — motion penalty, prior width, prior floor, sle
 
 This is what the protocol exists to catch, and it was caught on the baseline before it reached the model. Only the all-subject LOSO numbers are comparable to published results.
 
+
+### A low-motion fallback to the baseline
+
+The model is worse than the spectral baseline on sitting (4.09 vs 2.96 bpm),
+suggesting a hybrid that defers to the baseline when the wrist is still.
+Implemented with the switching threshold on `acc_total_energy` selected by
+nested CV — an inner split of 3 training subjects per fold, so the threshold
+never sees the held-out subject.
+
+**All 15 folds selected a threshold of zero**, i.e. never switch. Sitting is
+only 4,517 windows, while `working`, `lunch`, and `driving` are another 28,736
+windows that are also low-motion and where the model beats the baseline by
+1.5–3.5 bpm. Any threshold low enough to capture sitting also captures those,
+and the trade is strongly negative.
+
+The error on sitting is not explained by low motion but by spectral clarity:
+on an unambiguous single-peak spectrum, argmax is near-optimal and a learned
+model adds variance. A confidence-based gate (e.g. `ppg_peak_ratio`) would be
+the better-motivated version of this idea. Motion energy is the wrong variable.
+
+
 ---
 
 ## Limitations
