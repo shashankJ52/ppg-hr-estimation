@@ -68,7 +68,7 @@ section:last-of-type{border-bottom:0}
   margin-top:2rem; background:var(--surf); border:1px solid var(--line);
   border-radius:var(--r); overflow:hidden;
 }
-.scope canvas{display:block; width:100%; height:210px}
+.scope .vz svg{display:block; width:100%; height:auto}
 .readouts{display:flex; flex-wrap:wrap; border-top:1px solid var(--line)}
 .ro{flex:1 1 140px; padding:.85rem 1.1rem; border-right:1px solid var(--line)}
 .ro:last-child{border-right:0}
@@ -115,7 +115,7 @@ tr.hl td{background:color-mix(in srgb,var(--acc) 9%,transparent)}
 .ctl label{display:flex; justify-content:space-between; align-items:baseline; font-size:.85rem; margin-bottom:.4rem}
 .ctl label span.v{font-family:var(--f-mono); font-size:.85rem; color:var(--ink)}
 input[type=range]{width:100%; accent-color:var(--acc); height:1.1rem}
-.viz canvas{display:block; width:100%; border:1px solid var(--line); border-radius:var(--r); background:var(--surf)}
+.viz .vz svg{display:block; width:100%; height:auto; border:1px solid var(--line); border-radius:var(--r); background:var(--surf)}
 .viz{display:grid; gap:.9rem}
 .vt{font-size:.8rem; color:var(--ink3); margin-bottom:.35rem; display:flex; gap:.9rem; flex-wrap:wrap; align-items:center}
 .verdict{display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; margin-top:.2rem}
@@ -130,7 +130,7 @@ button.act{
 button.act:hover{border-color:var(--ink3)}
 .preset{display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.5rem}
 .preset button{font-size:.8rem; padding:.35rem .6rem}
-#drawWrap canvas{cursor:crosshair; touch-action:none}
+#drawWrap #vzDraw svg{cursor:crosshair; touch-action:none}
 :focus-visible{outline:2px solid var(--acc); outline-offset:2px}
 @media (max-width:860px){
   .grid2,.grid3,.pg,.io,.verdict{grid-template-columns:1fr}
@@ -171,7 +171,7 @@ button.act:hover{border-color:var(--ink3)}
     <p class="lede">The sensor on the back of a fitness watch works by shining light into your skin. It works well when you hold still. The moment your arm swings, the reading falls apart — and not randomly. It fails in a specific, predictable way that turns out to be fixable.</p>
 
     <div class="scope">
-      <canvas id="heroCv" height="210" aria-label="Animated wrist sensor trace degrading as motion increases"></canvas>
+      <div class="vz" id="heroCv" role="img" aria-label="Animated wrist sensor trace degrading as motion increases"></div>
       <div class="readouts">
         <div class="ro"><div class="k">Actual heart rate</div><div class="v" id="hTrue" style="color:var(--truth)">72<span class="u">bpm</span></div></div>
         <div class="ro"><div class="k">Naive reading</div><div class="v" id="hNaive" style="color:var(--ppg)">72<span class="u">bpm</span></div></div>
@@ -490,13 +490,13 @@ button.act:hover{border-color:var(--ink3)}
           <div class="vt">
             <span><span class="dot" style="background:var(--ppg); display:inline-block"></span> Light sensor, 8 seconds</span>
           </div>
-          <canvas id="cvPPG" height="130"></canvas>
+          <div class="vz" id="vzPPG" role="img" aria-label="Simulated light sensor trace"></div>
         </div>
         <div>
           <div class="vt">
             <span><span class="dot" style="background:var(--acc); display:inline-block"></span> Motion sensor, same 8 seconds</span>
           </div>
-          <canvas id="cvACC" height="90"></canvas>
+          <div class="vz" id="vzACC" role="img" aria-label="Simulated motion sensor trace"></div>
         </div>
         <div>
           <div class="vt">
@@ -505,7 +505,7 @@ button.act:hover{border-color:var(--ink3)}
             <span style="color:var(--acc)">— motion sensor</span>
             <span style="color:var(--truth)">┆ true heart rate</span>
           </div>
-          <canvas id="cvSpec" height="180"></canvas>
+          <div class="vz" id="vzSpec" role="img" aria-label="Rhythms present in both sensors"></div>
         </div>
         <div class="verdict">
           <div><div class="k">Actual</div><div class="v" id="pTrue" style="color:var(--truth)">88</div><div class="d">what we are trying to find</div></div>
@@ -526,8 +526,8 @@ button.act:hover{border-color:var(--ink3)}
         <div class="mono" id="drawOut" style="font:600 1.6rem/1.2 var(--f-mono); margin-top:.2rem">—</div>
       </div>
       <div class="viz" id="drawWrap">
-        <canvas id="cvDraw" height="150"></canvas>
-        <canvas id="cvDrawSpec" height="130"></canvas>
+        <div class="vz" id="vzDraw"></div>
+        <div class="vz" id="vzDrawSpec" role="img" aria-label="Rhythms found in the drawn wave"></div>
       </div>
     </div>
   </section>
@@ -714,65 +714,139 @@ function estimate(ppg,acc){
   return {naive,smart:best?best.bpm:NaN,sp,sa,motionPeaks:ap};
 }
 
-/* ============ canvas helpers ============ */
-function fit(cv){
-  const r=window.devicePixelRatio||1, w=cv.clientWidth;
-  if(!w) return null;                       // hidden container: nothing to draw yet
-  cv.width=w*r; cv.height=cv.getAttribute('height')*r;
-  const x=cv.getContext('2d'); x.setTransform(r,0,0,r,0,0);
-  return {x,w,h:+cv.getAttribute('height')};
+/* ============ svg drawing helpers ============ */
+const VW=1000;
+function gridLines(w,h,cols){
+  let s='';
+  for(let i=1;i<cols;i++){const x=(i*w/cols).toFixed(1);
+    s+=`<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="${C('--grid')}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;}
+  s+=`<line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="${C('--grid')}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  return s;
 }
-function grid(x,w,h,cols){
-  x.strokeStyle=C('--grid'); x.lineWidth=1;
-  for(let i=1;i<cols;i++){const gx=Math.round(i*w/cols)+.5; x.beginPath(); x.moveTo(gx,0); x.lineTo(gx,h); x.stroke();}
-  const gy=Math.round(h/2)+.5; x.beginPath(); x.moveTo(0,gy); x.lineTo(w,gy); x.stroke();
-}
-function trace(x,sig,w,h,col,padY=10){
+function pathOf(sig,w,h,pad,maxPts){
   let mn=Infinity,mx=-Infinity;
   for(const v of sig){if(v<mn)mn=v; if(v>mx)mx=v;}
-  const rng=(mx-mn)||1;
-  x.strokeStyle=col; x.lineWidth=1.5; x.lineJoin='round'; x.beginPath();
-  sig.forEach((v,i)=>{
-    const px=i/(sig.length-1)*w, py=padY+(1-(v-mn)/rng)*(h-2*padY);
-    i?x.lineTo(px,py):x.moveTo(px,py);
+  const rng=(mx-mn)||1, step=Math.max(1,Math.ceil(sig.length/(maxPts||500)));
+  let d='';
+  for(let i=0;i<sig.length;i+=step){
+    const x=(i/(sig.length-1)*w).toFixed(1);
+    const y=(pad+(1-(sig[i]-mn)/rng)*(h-2*pad)).toFixed(1);
+    d+=(d?'L':'M')+x+' '+y;
+  }
+  return d;
+}
+function svg(h,inner){
+  return `<svg viewBox="0 0 ${VW} ${h}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+function traceInto(el,sig,h,col,opts={}){
+  if(!el) return;
+  const inner = gridLines(VW,h,opts.cols||8)
+    + `<path d="${pathOf(sig,VW,h,opts.pad||14,opts.maxPts)}" fill="none" stroke="${col}" `
+    + `stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  el.innerHTML = svg(h,inner);
+}
+
+/* ============ signal synthesis ============ */
+function synth(hr,cad,mot,noi){
+  const fh=hr/60, fsw=cad/120;            // arm swings once per two steps
+  const ppg=new Float64Array(NSAMP), acc=new Float64Array(256);
+  let seed=12345;
+  const rnd=()=>{seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff-0.5;};
+  for(let i=0;i<NSAMP;i++){
+    const t=i/FS;
+    let v=0;
+    for(let k=1;k<=4;k++) v+=Math.sin(2*Math.PI*k*fh*t-k*0.5)/Math.pow(k,1.45);
+    let m=0;
+    if(cad>0) m=Math.sin(2*Math.PI*fsw*t)+0.9*Math.sin(2*Math.PI*2*fsw*t+0.6)+0.25*Math.sin(2*Math.PI*3*fsw*t);
+    ppg[i]=v+mot*3.1*m+noi*1.1*rnd();
+  }
+  for(let i=0;i<256;i++){
+    const t=i/32;
+    let m=0;
+    if(cad>0) m=Math.sin(2*Math.PI*fsw*t)+0.85*Math.sin(2*Math.PI*2*fsw*t+0.6)+0.22*Math.sin(2*Math.PI*3*fsw*t);
+    acc[i]=mot*m+0.03*rnd();
+  }
+  return {ppg,acc};
+}
+function estimate(ppg,acc){
+  const sp=spectrumOf(ppg,64), sa=spectrumOf(acc,32);
+  const cand=peaksIn(sp.mag,sp.df,0.5,3.5,6);
+  const naive=cand.length?cand[0].f*60:NaN;
+  const ap=peaksIn(sa.mag,sa.df,0.25,3.5,3).map(p=>p.f*60);
+  const bad=[...ap,...ap.map(v=>v/2),...ap.map(v=>v*2)];
+  let best=null;
+  cand.forEach(c=>{
+    const bpm=c.f*60, near=bad.some(b=>Math.abs(b-bpm)<6);
+    const score=c.p*(near?0.5:1);
+    if(!best||score>best.score) best={score,bpm};
   });
-  x.stroke();
+  return {naive,smart:best?best.bpm:NaN,sp,sa};
+}
+
+/* ============ spectrum panel ============ */
+function specInto(el,e,trueBpm,showAcc,h){
+  if(!el) return;
+  const LO=30,HI=210, base=h-22, xs=b=>((b-LO)/(HI-LO)*VW);
+  let s='';
+  for(let b=60;b<HI;b+=30){
+    const x=xs(b).toFixed(1);
+    s+=`<line x1="${x}" y1="0" x2="${x}" y2="${base}" stroke="${C('--grid')}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    s+=`<text x="${x}" y="${h-6}" text-anchor="middle" fill="${C('--ink3')}" font-size="11" font-family="${C('--f-mono')}">${b}</text>`;
+  }
+  const curve=(sp,col,fill)=>{
+    let mx=0; const pts=[];
+    for(let b=LO;b<=HI;b+=1){const v=sp.mag[Math.round(b/60/sp.df)]||0; pts.push([b,v]); if(v>mx)mx=v;}
+    let d='';
+    pts.forEach(([b,v],i)=>{
+      const x=xs(b).toFixed(1), y=(base-(v/(mx||1))*(base-10)).toFixed(1);
+      d+=(i?'L':'M')+x+' '+y;
+    });
+    let out='';
+    if(fill) out+=`<path d="${d}L${VW} ${base}L0 ${base}Z" fill="${col}" opacity="0.14"/>`;
+    out+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="1.7" vector-effect="non-scaling-stroke"/>`;
+    return out;
+  };
+  if(showAcc) s+=curve(e.sa,C('--acc'),true);
+  s+=curve(e.sp,C('--ppg'),false);
+  const tx=xs(trueBpm).toFixed(1);
+  s+=`<line x1="${tx}" y1="0" x2="${tx}" y2="${base}" stroke="${C('--truth')}" stroke-width="1.3" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
+  el.innerHTML=svg(h,s);
 }
 
 /* ============ hero ============ */
-const heroCv=document.getElementById('heroCv');
-let heroT=0, heroBuf=[], heroLast={n:72,s:72,m:0};
+const heroEl=document.getElementById('heroCv');
+let heroT=0;
 const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 function heroFrame(){
-  const f=fit(heroCv);
-  if(!f){ if(!reduce) requestAnimationFrame(heroFrame); return; }
-  const {x,w,h}=f;
-  const cyc=(heroT%1400)/1400;
+  const cyc=(heroT%100)/100;
   const mot=Math.max(0,Math.min(1,(Math.sin((cyc-0.25)*2*Math.PI)+0.35)/1.2));
   const hr=72+mot*34, cad=mot>0.06?96+mot*36:0;
   const {ppg,acc}=synth(hr,cad,mot*0.95,0.14);
   const e=estimate(ppg,acc);
-  x.clearRect(0,0,w,h); grid(x,w,h,8);
-  trace(x,Array.from(ppg),w,h,C('--ppg'),14);
-  x.globalAlpha=.5; trace(x,Array.from(acc),w,h*0.42,C('--acc'),6); x.globalAlpha=1;
-  heroLast={n:e.naive,s:e.smart,m:mot,hr};
-  document.getElementById('hTrue').innerHTML=Math.round(hr)+'<span class="u">bpm</span>';
-  document.getElementById('hNaive').innerHTML=(isNaN(e.naive)?'—':Math.round(e.naive))+'<span class="u">bpm</span>';
-  document.getElementById('hSmart').innerHTML=(isNaN(e.smart)?'—':Math.round(e.smart))+'<span class="u">bpm</span>';
-  document.getElementById('hMot').innerHTML=Math.round(mot*100)+'<span class="u">%</span>';
+
+  const h=210;
+  const inner = gridLines(VW,h,8)
+    + `<path d="${pathOf(acc,VW,h*0.5,8,260)}" fill="none" stroke="${C('--acc')}" stroke-width="1.4" opacity="0.5" vector-effect="non-scaling-stroke"/>`
+    + `<path d="${pathOf(ppg,VW,h,16,320)}" fill="none" stroke="${C('--ppg')}" stroke-width="1.7" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  heroEl.innerHTML=svg(h,inner);
+
+  const set=(id,v,u)=>document.getElementById(id).innerHTML=(isNaN(v)?'—':Math.round(v))+'<span class="u">'+u+'</span>';
+  set('hTrue',hr,'bpm'); set('hNaive',e.naive,'bpm'); set('hSmart',e.smart,'bpm'); set('hMot',mot*100,'%');
+
   const note=document.getElementById('heroNote');
-  const errN=Math.abs(e.naive-hr), errS=Math.abs(e.smart-hr);
+  const eN=Math.abs(e.naive-hr), eS=Math.abs(e.smart-hr);
   if(mot<0.12) note.textContent='Sitting still. The pulse is obvious and both methods agree.';
-  else if(errN>12&&errS<10) note.textContent='Walking. The naive reading has locked onto the footstep rhythm; using the motion sensor avoids it.';
-  else if(errN>12) note.textContent='Heavy movement. Both methods are struggling — this is the hard case stairs represents.';
+  else if(eN>12&&eS<10) note.textContent='Walking. The naive reading has locked onto the footstep rhythm; using the motion sensor avoids it.';
+  else if(eN>12) note.textContent='Heavy movement. Both methods are struggling — this is the hard case stair climbing represents.';
   else note.textContent='Moving. The pulse is still the strongest rhythm present, so both methods hold.';
-  heroT+=reduce?1400:9;
-  if(!reduce) requestAnimationFrame(heroFrame);
+  heroT++;
 }
-requestAnimationFrame(heroFrame);
+heroFrame();
+if(!reduce) setInterval(heroFrame,140);
 
 /* ============ playground ============ */
-const S={hr:document.getElementById('sHR'),cad:document.getElementById('sCad'),mot:document.getElementById('sMot'),noi:document.getElementById('sNoise')};
+const S={hr:document.getElementById('sHR'),cad:document.getElementById('sCad'),
+         mot:document.getElementById('sMot'),noi:document.getElementById('sNoise')};
 function drawPlayground(){
   const hr=+S.hr.value, cad=+S.cad.value, mot=+S.mot.value/100, noi=+S.noi.value/100;
   document.getElementById('vHR').textContent=hr+' bpm';
@@ -783,35 +857,10 @@ function drawPlayground(){
   const {ppg,acc}=synth(hr,cad,mot,noi);
   const e=estimate(ppg,acc);
 
-  let g=fit(document.getElementById('cvPPG'));
-  if(g){g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(ppg),g.w,g.h,C('--ppg'));}
-  g=fit(document.getElementById('cvACC'));
-  if(g){g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(acc),g.w,g.h,C('--acc'));}
+  traceInto(document.getElementById('vzPPG'),ppg,150,C('--ppg'));
+  traceInto(document.getElementById('vzACC'),acc,110,C('--acc'),{pad:10});
+  specInto(document.getElementById('vzSpec'),e,hr,mot>0.01,215);
 
-  // spectrum
-  g=fit(document.getElementById('cvSpec'));
-  if(g){
-  const {x,w,h}=g; x.clearRect(0,0,w,h);
-  const LO=30,HI=210, xs=b=>(b-LO)/(HI-LO)*w;
-  x.strokeStyle=C('--grid');
-  for(let b=60;b<HI;b+=30){const px=Math.round(xs(b))+.5; x.beginPath(); x.moveTo(px,0); x.lineTo(px,h-18); x.stroke();
-    x.fillStyle=C('--ink3'); x.font='10px '+C('--f-mono'); x.textAlign='center'; x.fillText(b,px,h-5);}
-  const band=(sp,fsr,col,fill)=>{
-    let mx=0; const pts=[];
-    for(let b=LO;b<=HI;b+=1){const i=Math.round(b/60/sp.df); const v=sp.mag[i]||0; pts.push([b,v]); if(v>mx)mx=v;}
-    x.beginPath();
-    pts.forEach(([b,v],i)=>{const px=xs(b),py=(h-20)-(v/(mx||1))*(h-32); i?x.lineTo(px,py):x.moveTo(px,py);});
-    x.strokeStyle=col; x.lineWidth=1.6; x.stroke();
-    if(fill){x.lineTo(xs(HI),h-20); x.lineTo(xs(LO),h-20); x.closePath(); x.fillStyle=col+'22'; x.fill();}
-  };
-  if(mot>0.01) band(e.sa,32,C('--acc'),true);
-  band(e.sp,64,C('--ppg'),false);
-  const tx=Math.round(xs(hr))+.5;
-  x.setLineDash([4,3]); x.strokeStyle=C('--truth'); x.lineWidth=1.2;
-  x.beginPath(); x.moveTo(tx,0); x.lineTo(tx,h-20); x.stroke(); x.setLineDash([]);
-  }
-
-  // verdict
   const set=(id,idD,val)=>{
     const err=Math.abs(val-hr);
     document.getElementById(id).textContent=isNaN(val)?'—':Math.round(val);
@@ -838,64 +887,59 @@ document.querySelectorAll('.preset button').forEach(b=>b.onclick=()=>{
 });
 
 /* ============ draw your own ============ */
-const dCv=document.getElementById('cvDraw'), dSp=document.getElementById('cvDrawSpec');
+const dEl=document.getElementById('vzDraw'), dSpEl=document.getElementById('vzDrawSpec');
 let drawn=new Array(NSAMP).fill(0), drawing=false, anyDrawn=false;
 function renderDraw(){
-  let g=fit(dCv);
-  if(g){
-    g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8);
-    if(!anyDrawn){
-      g.x.fillStyle=C('--ink3'); g.x.font='13px '+C('--f-sans'); g.x.textAlign='center';
-      g.x.fillText('Drag across here to draw a wave',g.w/2,g.h/2-6);
-    } else trace(g.x,drawn,g.w,g.h,C('--ppg'));
+  const h=160;
+  let inner=gridLines(VW,h,8);
+  if(!anyDrawn){
+    inner+=`<text x="${VW/2}" y="${h/2}" text-anchor="middle" dominant-baseline="central" fill="${C('--ink3')}" font-size="15" font-family="${C('--f-sans')}">Drag across here to draw a wave</text>`;
+  } else {
+    inner+=`<path d="${pathOf(drawn,VW,h,14,500)}" fill="none" stroke="${C('--ppg')}" stroke-width="1.7" vector-effect="non-scaling-stroke"/>`;
   }
-  g=fit(dSp);
-  if(!g) return;
-  g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,6);
+  inner+=`<rect id="drawHit" x="0" y="0" width="${VW}" height="${h}" fill="transparent"/>`;
+  dEl.innerHTML=svg(h,inner);
+
+  const hs=130, base=hs-20;
   if(anyDrawn){
     const sp=spectrumOf(drawn,64), pk=peaksIn(sp.mag,sp.df,0.4,4,1);
-    const LO=20,HI=250, xs=b=>(b-LO)/(HI-LO)*g.w;
+    const LO=20,HI=250, xs=b=>((b-LO)/(HI-LO)*VW);
     let mx=0; const pts=[];
     for(let b=LO;b<=HI;b+=1){const v=sp.mag[Math.round(b/60/sp.df)]||0; pts.push([b,v]); if(v>mx)mx=v;}
-    g.x.beginPath();
-    pts.forEach(([b,v],i)=>{const px=xs(b),py=(g.h-18)-(v/(mx||1))*(g.h-30); i?g.x.lineTo(px,py):g.x.moveTo(px,py);});
-    g.x.strokeStyle=C('--ppg'); g.x.lineWidth=1.6; g.x.stroke();
-    g.x.fillStyle=C('--ink3'); g.x.font='10px '+C('--f-mono'); g.x.textAlign='center';
-    for(let b=60;b<HI;b+=60) g.x.fillText(b,xs(b),g.h-4);
+    let d='';
+    pts.forEach(([b,v],i)=>{d+=(i?'L':'M')+xs(b).toFixed(1)+' '+(base-(v/(mx||1))*(base-10)).toFixed(1);});
+    let s=`<path d="${d}" fill="none" stroke="${C('--ppg')}" stroke-width="1.7" vector-effect="non-scaling-stroke"/>`;
+    for(let b=60;b<HI;b+=60)
+      s+=`<text x="${xs(b).toFixed(1)}" y="${hs-4}" text-anchor="middle" fill="${C('--ink3')}" font-size="11" font-family="${C('--f-mono')}">${b}</text>`;
+    dSpEl.innerHTML=svg(hs,s);
     document.getElementById('drawOut').textContent=pk.length?Math.round(pk[0].f*60)+' bpm':'—';
-  } else document.getElementById('drawOut').textContent='—';
-}
-function pos(ev){
-  const r=dCv.getBoundingClientRect();
-  const cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;
-  const cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top;
-  return [Math.max(0,Math.min(1,cx/r.width)), Math.max(-1,Math.min(1,1-2*cy/r.height))];
+  } else {
+    dSpEl.innerHTML=svg(hs,gridLines(VW,hs,6));
+    document.getElementById('drawOut').textContent='—';
+  }
 }
 function put(ev){
-  const [fx,fy]=pos(ev); const i=Math.round(fx*(NSAMP-1));
+  const r=dEl.getBoundingClientRect();
+  if(!r.width) return;
+  const cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;
+  const cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top;
+  const fx=Math.max(0,Math.min(1,cx/r.width));
+  const fy=Math.max(-1,Math.min(1,1-2*cy/r.height));
+  const i=Math.round(fx*(NSAMP-1));
   for(let k=Math.max(0,i-3);k<=Math.min(NSAMP-1,i+3);k++) drawn[k]=fy;
   anyDrawn=true; renderDraw();
 }
-['mousedown','touchstart'].forEach(e=>dCv.addEventListener(e,ev=>{ev.preventDefault();drawing=true;put(ev);}));
-['mousemove','touchmove'].forEach(e=>dCv.addEventListener(e,ev=>{if(drawing){ev.preventDefault();put(ev);}}));
-['mouseup','mouseleave','touchend'].forEach(e=>dCv.addEventListener(e,()=>drawing=false));
+['mousedown','touchstart'].forEach(ev=>dEl.addEventListener(ev,e=>{e.preventDefault();drawing=true;put(e);}));
+['mousemove','touchmove'].forEach(ev=>dEl.addEventListener(ev,e=>{if(drawing){e.preventDefault();put(e);}}));
+['mouseup','mouseleave','touchend'].forEach(ev=>dEl.addEventListener(ev,()=>drawing=false));
+window.addEventListener('mouseup',()=>drawing=false);
 document.getElementById('clearDraw').onclick=()=>{drawn=new Array(NSAMP).fill(0); anyDrawn=false; renderDraw();};
 
 /* ============ boot ============ */
 function drawAll(){ drawPlayground(); renderDraw(); }
+function sizeAll(){ drawAll(); }
 drawAll();
-
-// Canvases in a hidden tab have zero width. Redraw as soon as they gain any,
-// which covers the tab switch, font loading, and orientation changes.
-if(window.ResizeObserver){
-  const ro=new ResizeObserver(entries=>{
-    if(entries.some(e=>e.contentRect.width>0)) drawAll();
-  });
-  ['cvPPG','cvACC','cvSpec','cvDraw','cvDrawSpec'].forEach(id=>ro.observe(document.getElementById(id)));
-}
-function sizeAll(){ requestAnimationFrame(drawAll); }
-
-let rt; window.addEventListener('resize',()=>{clearTimeout(rt); rt=setTimeout(()=>{drawAll(); renderCharts();},120);});
+let rt; window.addEventListener('resize',()=>{clearTimeout(rt); rt=setTimeout(renderCharts,140);});
 </script>
 </body>
 </html>
