@@ -717,6 +717,7 @@ function estimate(ppg,acc){
 /* ============ canvas helpers ============ */
 function fit(cv){
   const r=window.devicePixelRatio||1, w=cv.clientWidth;
+  if(!w) return null;                       // hidden container: nothing to draw yet
   cv.width=w*r; cv.height=cv.getAttribute('height')*r;
   const x=cv.getContext('2d'); x.setTransform(r,0,0,r,0,0);
   return {x,w,h:+cv.getAttribute('height')};
@@ -743,7 +744,9 @@ const heroCv=document.getElementById('heroCv');
 let heroT=0, heroBuf=[], heroLast={n:72,s:72,m:0};
 const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 function heroFrame(){
-  const {x,w,h}=fit(heroCv);
+  const f=fit(heroCv);
+  if(!f){ if(!reduce) requestAnimationFrame(heroFrame); return; }
+  const {x,w,h}=f;
   const cyc=(heroT%1400)/1400;
   const mot=Math.max(0,Math.min(1,(Math.sin((cyc-0.25)*2*Math.PI)+0.35)/1.2));
   const hr=72+mot*34, cad=mot>0.06?96+mot*36:0;
@@ -781,12 +784,13 @@ function drawPlayground(){
   const e=estimate(ppg,acc);
 
   let g=fit(document.getElementById('cvPPG'));
-  g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(ppg),g.w,g.h,C('--ppg'));
+  if(g){g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(ppg),g.w,g.h,C('--ppg'));}
   g=fit(document.getElementById('cvACC'));
-  g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(acc),g.w,g.h,C('--acc'));
+  if(g){g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8); trace(g.x,Array.from(acc),g.w,g.h,C('--acc'));}
 
   // spectrum
   g=fit(document.getElementById('cvSpec'));
+  if(g){
   const {x,w,h}=g; x.clearRect(0,0,w,h);
   const LO=30,HI=210, xs=b=>(b-LO)/(HI-LO)*w;
   x.strokeStyle=C('--grid');
@@ -805,6 +809,7 @@ function drawPlayground(){
   const tx=Math.round(xs(hr))+.5;
   x.setLineDash([4,3]); x.strokeStyle=C('--truth'); x.lineWidth=1.2;
   x.beginPath(); x.moveTo(tx,0); x.lineTo(tx,h-20); x.stroke(); x.setLineDash([]);
+  }
 
   // verdict
   const set=(id,idD,val)=>{
@@ -836,12 +841,17 @@ document.querySelectorAll('.preset button').forEach(b=>b.onclick=()=>{
 const dCv=document.getElementById('cvDraw'), dSp=document.getElementById('cvDrawSpec');
 let drawn=new Array(NSAMP).fill(0), drawing=false, anyDrawn=false;
 function renderDraw(){
-  let g=fit(dCv); g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8);
-  if(!anyDrawn){
-    g.x.fillStyle=C('--ink3'); g.x.font='13px '+C('--f-sans'); g.x.textAlign='center';
-    g.x.fillText('Drag across here to draw a wave',g.w/2,g.h/2-6);
-  } else trace(g.x,drawn,g.w,g.h,C('--ppg'));
-  g=fit(dSp); g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,6);
+  let g=fit(dCv);
+  if(g){
+    g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,8);
+    if(!anyDrawn){
+      g.x.fillStyle=C('--ink3'); g.x.font='13px '+C('--f-sans'); g.x.textAlign='center';
+      g.x.fillText('Drag across here to draw a wave',g.w/2,g.h/2-6);
+    } else trace(g.x,drawn,g.w,g.h,C('--ppg'));
+  }
+  g=fit(dSp);
+  if(!g) return;
+  g.x.clearRect(0,0,g.w,g.h); grid(g.x,g.w,g.h,6);
   if(anyDrawn){
     const sp=spectrumOf(drawn,64), pk=peaksIn(sp.mag,sp.df,0.4,4,1);
     const LO=20,HI=250, xs=b=>(b-LO)/(HI-LO)*g.w;
@@ -872,9 +882,19 @@ function put(ev){
 document.getElementById('clearDraw').onclick=()=>{drawn=new Array(NSAMP).fill(0); anyDrawn=false; renderDraw();};
 
 /* ============ boot ============ */
-function sizeAll(){}
 function drawAll(){ drawPlayground(); renderDraw(); }
 drawAll();
+
+// Canvases in a hidden tab have zero width. Redraw as soon as they gain any,
+// which covers the tab switch, font loading, and orientation changes.
+if(window.ResizeObserver){
+  const ro=new ResizeObserver(entries=>{
+    if(entries.some(e=>e.contentRect.width>0)) drawAll();
+  });
+  ['cvPPG','cvACC','cvSpec','cvDraw','cvDrawSpec'].forEach(id=>ro.observe(document.getElementById(id)));
+}
+function sizeAll(){ requestAnimationFrame(drawAll); }
+
 let rt; window.addEventListener('resize',()=>{clearTimeout(rt); rt=setTimeout(()=>{drawAll(); renderCharts();},120);});
 </script>
 </body>
